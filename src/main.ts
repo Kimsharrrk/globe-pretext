@@ -3,7 +3,6 @@ import { GlobeApp } from './components/Globe';
 import { TextLayer } from './components/TextLayer';
 import type { TextData } from './components/TextLayer';
 import { latLonToVector3 } from './utils/coordinates';
-import * as THREE from 'three';
 
 document.addEventListener('DOMContentLoaded', () => {
   try {
@@ -163,19 +162,8 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    const layerSnapping = document.getElementById('layer-snapping') as HTMLInputElement;
     const layerUnroll = document.getElementById('layer-unroll') as HTMLInputElement;
     const layerSatellites = document.getElementById('layer-satellites') as HTMLInputElement;
-    const crosshair = document.getElementById('crosshair');
-
-    let isSnappingEnabled = false;
-
-    if (layerSnapping) {
-      layerSnapping.addEventListener('change', (e) => {
-        isSnappingEnabled = (e.target as HTMLInputElement).checked;
-        if (crosshair) crosshair.style.display = isSnappingEnabled ? 'block' : 'none';
-      });
-    }
 
     if (layerUnroll) {
       layerUnroll.addEventListener('change', (e) => {
@@ -195,52 +183,21 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Magnetic Snapping Logic
-    let snapTimeout: any;
-    globeApp.controls.addEventListener('change', () => {
-      if (!isSnappingEnabled) return;
-      
-      clearTimeout(snapTimeout);
-      snapTimeout = setTimeout(() => {
-        const centerRay = new THREE.Raycaster();
-        centerRay.setFromCamera(new THREE.Vector2(0, 0), globeApp.camera);
-        if (globeApp.earthMesh) {
-          const intersects = centerRay.intersectObject(globeApp.earthMesh);
-        if (intersects.length > 0) {
-           const point = intersects[0].point;
-           // Convert 3D point to lat/lon (assuming radius 100)
-           const lat = 90 - (Math.acos(point.y / 100)) * (180 / Math.PI);
-           let lon = ((270 + (Math.atan2(point.x, point.z) * (180 / Math.PI))) % 360) - 180;
-           
-           const cities = (window as any).currentCityData || [];
-           let nearestCity = null;
-           let minDist = 5; // Snap threshold (~500km)
-           
-           for (const c of cities) {
-             // Simple euclidean distance on lat/lon for fast snapping
-             const dist = Math.sqrt(Math.pow(c.lat - lat, 2) + Math.pow(c.lon - lon, 2));
-             if (dist < minDist) {
-               minDist = dist;
-               nearestCity = c;
-             }
-           }
+    // Help & Legend UI toggling
+    const legendPanel = document.getElementById('legend-panel');
+    const legendClose = document.getElementById('legend-close');
+    const legendToggle = document.getElementById('legend-toggle');
 
-           if (nearestCity) {
-             globeApp.flyTo(nearestCity.lat, nearestCity.lon);
-             // Make crosshair pulse
-             if (crosshair) {
-               crosshair.style.borderColor = '#00ff00';
-               crosshair.style.boxShadow = '0 0 20px #00ff00';
-               setTimeout(() => {
-                 crosshair.style.borderColor = 'rgba(255,255,255,0.5)';
-                 crosshair.style.boxShadow = '0 0 10px rgba(0,255,255,0.5)';
-               }, 1000);
-             }
-           }
-         }
-        }
-      }, 500); // 300ms after user stops dragging
-    });
+    if (legendClose && legendPanel && legendToggle) {
+      legendClose.addEventListener('click', () => {
+        legendPanel.style.display = 'none';
+        legendToggle.style.display = 'flex';
+      });
+      legendToggle.addEventListener('click', () => {
+        legendPanel.style.display = 'block';
+        legendToggle.style.display = 'none';
+      });
+    }
 
     // UI Interaction
     const infoPanel = document.getElementById('info-panel');
@@ -253,6 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
       infoClose.addEventListener('click', () => {
         infoPanel.style.display = 'none';
         globeApp.drawSelectedSatelliteOrbit([]); // Clear orbit line
+        globeApp.clearHighlightedNetworkArc();  // Clear highlighted network arc
       });
     }
 
@@ -266,6 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (result && infoPanel && infoTitle && infoSubtitle && infoDesc) {
         if (result.type === 'satellite') {
           const s = result.data;
+          globeApp.clearHighlightedNetworkArc();
           infoPanel.style.display = 'block';
           infoTitle.textContent = s.name;
           infoSubtitle.textContent = s.type === 'payload' ? 'ACTIVE SATELLITE' : 'SPACE DEBRIS/ROCKET';
@@ -286,27 +245,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } else if (result.type === 'city') {
           const c = result.data;
+          globeApp.clearHighlightedNetworkArc();
           infoPanel.style.display = 'block';
           infoTitle.textContent = c.name;
           infoSubtitle.textContent = c.country || 'Global City';
           
           infoDesc.innerHTML = `
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-              <div style="color: #888;">Population</div><div style="text-align: right;">${(c.pop || 0).toLocaleString()}</div>
-              <div style="color: #888;">Local Time</div><div style="text-align: right;">${c.time || 'N/A'}</div>
-              <div style="color: #888;">Weather</div><div style="text-align: right;">${c.weather || 'N/A'}</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 13px;">
+              <div style="color: #aaa;">국가 (Country)</div>
+              <div style="text-align: right; font-weight: 500;">${c.country}</div>
+              <div style="color: #aaa;">인구수 (Population)</div>
+              <div style="text-align: right; font-weight: 500; color: #ffcc00;">${(c.pop || 0).toLocaleString()}명</div>
+              <div style="color: #aaa;">현지 시간 (Local Time)</div>
+              <div style="text-align: right; font-weight: 500;">${c.time || 'N/A'}</div>
+              <div style="color: #aaa;">현재 날씨 (Weather)</div>
+              <div style="text-align: right; font-weight: 500; color: #00ffff;">${c.weather || 'N/A'}</div>
             </div>
-            <div style="margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px;">
-              <strong style="color: #ffaa00;">Latest News:</strong><br>
-              ${c.news || 'No active headlines'}
+            <div style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; border-left: 3px solid #ffaa00;">
+              <strong style="color: #ffaa00; display: block; margin-bottom: 5px;">📰 실시간 뉴스 (Latest News)</strong>
+              <span style="color: #ddd; line-height: 1.4;">${c.news || 'No active headlines'}</span>
             </div>
           `;
           globeApp.drawSelectedSatelliteOrbit([]); // Clear orbit if a city is clicked
+        } else if (result.type === 'network') {
+          const line = result.data;
+          globeApp.highlightNetworkArc(line);
+          infoPanel.style.display = 'block';
+          infoTitle.textContent = 'Network Connection';
+          infoSubtitle.textContent = 'Active Network Arc';
+          infoDesc.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; text-align: center;">
+              <div style="font-size: 16px; font-weight: bold; color: #ffaa00;">${line.userData.startCity}</div>
+              <div style="color: #888;">⟷</div>
+              <div style="font-size: 16px; font-weight: bold; color: #ffaa00;">${line.userData.endCity}</div>
+            </div>
+            <p style="margin-top: 15px; font-size: 13px; color: #aaa; text-align: center;">
+              This arc represents a high-speed data connection between these two global cities.
+            </p>
+          `;
+          globeApp.drawSelectedSatelliteOrbit([]);
         }
       } else {
         // Clicked empty space
         if (infoPanel) infoPanel.style.display = 'none';
         globeApp.drawSelectedSatelliteOrbit([]);
+        globeApp.clearHighlightedNetworkArc();
       }
     });
     
@@ -325,23 +308,28 @@ document.addEventListener('DOMContentLoaded', () => {
           if (hit.id.startsWith('city_')) {
             const rawCity = (window as any).cityDetails?.find((c: any) => c.id === hit.id);
             if (rawCity) {
+              globeApp.clearHighlightedNetworkArc();
               infoSubtitle.innerText = `${rawCity.country} | Pop: ${(rawCity.pop / 1000000).toFixed(1)}M`;
               infoDesc.innerHTML = `
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                  <span><strong>Time:</strong> ${rawCity.time}</span>
-                  <span><strong>Weather:</strong> ${rawCity.weather}</span>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 13px;">
+                  <div style="color: #aaa;">국가 (Country)</div>
+                  <div style="text-align: right; font-weight: 500;">${rawCity.country}</div>
+                  <div style="color: #aaa;">인구수 (Population)</div>
+                  <div style="text-align: right; font-weight: 500; color: #ffcc00;">${(rawCity.pop || 0).toLocaleString()}명</div>
+                  <div style="color: #aaa;">현지 시간 (Local Time)</div>
+                  <div style="text-align: right; font-weight: 500;">${rawCity.time || 'N/A'}</div>
+                  <div style="color: #aaa;">현재 날씨 (Weather)</div>
+                  <div style="text-align: right; font-weight: 500; color: #00ffff;">${rawCity.weather || 'N/A'}</div>
                 </div>
-                <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 6px;">
-                  <strong>Latest News</strong><br/>
-                  ${rawCity.news}
-                </div>
-                <div style="margin-top: 10px; color: #00ffff; font-weight: bold;">
-                  Trending: #Tech #AI #Global
+                <div style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; border-left: 3px solid #ffaa00;">
+                  <strong style="color: #ffaa00; display: block; margin-bottom: 5px;">📰 실시간 뉴스 (Latest News)</strong>
+                  <span style="color: #ddd; line-height: 1.4;">${rawCity.news || 'No active headlines'}</span>
                 </div>
               `;
             }
 
           } else if (hit.id.startsWith('sat_')) {
+            globeApp.clearHighlightedNetworkArc();
             infoSubtitle.innerText = 'Satellite Info';
             infoDesc.innerHTML = `Status: Active<br/>Orbit: LEO (Low Earth Orbit)`;
           }

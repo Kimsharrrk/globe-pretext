@@ -251,6 +251,7 @@ export class GlobeApp {
     this.mouse.y = -(clientY / window.innerHeight) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
     this.raycaster.params.Points.threshold = 3.0; // Make it easier to click points
+    this.raycaster.params.Line = { threshold: 1.5 }; // Make it easier to click lines
 
     // Raycast satellites
     if (this.satSwarmPoints && this.satSwarmPoints.visible) {
@@ -272,6 +273,14 @@ export class GlobeApp {
         if (instanceId !== undefined && cities[instanceId]) {
           return { type: 'city', data: cities[instanceId] };
         }
+      }
+    }
+
+    // Raycast network lines
+    if (this.networksGroup && this.networksGroup.children.length > 0) {
+      const intersects = this.raycaster.intersectObjects(this.networksGroup.children);
+      if (intersects.length > 0) {
+        return { type: 'network', data: intersects[0].object };
       }
     }
 
@@ -335,8 +344,30 @@ export class GlobeApp {
     if (t > 0) this.applyMorph();
   }
 
+  public highlightedNetworkArc: THREE.Line | null = null;
+
+  public highlightNetworkArc(line: THREE.Line) {
+    this.clearHighlightedNetworkArc();
+    this.highlightedNetworkArc = line;
+    const mat = line.material as THREE.LineBasicMaterial;
+    mat.opacity = 1.0;
+    mat.color.setHex(0xffff00); // Highlight with bright yellow
+  }
+
+  public clearHighlightedNetworkArc() {
+    if (this.highlightedNetworkArc) {
+      const mat = this.highlightedNetworkArc.material as THREE.LineBasicMaterial;
+      mat.opacity = 0.25;
+      mat.color.setHex(0xff00ff); // Restore to neon magenta
+      this.highlightedNetworkArc = null;
+    }
+  }
+
   public drawNetworkArcs(cities: any[]) {
     // Clear existing
+    if (this.highlightedNetworkArc) {
+      this.highlightedNetworkArc = null;
+    }
     while (this.networksGroup.children.length > 0) {
       const child = this.networksGroup.children[0] as THREE.Line;
       this.networksGroup.remove(child);
@@ -346,12 +377,6 @@ export class GlobeApp {
 
     // Connect top 50 cities randomly to create a beautiful global network
     const topCities = [...cities].sort((a, b) => b.pop - a.pop).slice(0, 50);
-    
-    const material = new THREE.LineBasicMaterial({
-      color: 0xff00ff,
-      transparent: true,
-      opacity: 0.2
-    });
 
     for (let i = 0; i < topCities.length; i++) {
       // Connect each city to 3 other random top cities
@@ -370,11 +395,20 @@ export class GlobeApp {
         const points = curve.getPoints(20);
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         this.setupMorphGeometry(geometry);
+        
+        // Instantiate unique material for each line so we can highlight it individually
+        const material = new THREE.LineBasicMaterial({
+          color: 0xff00ff,
+          transparent: true,
+          opacity: 0.25
+        });
+
         const line = new THREE.Line(geometry, material);
         line.userData = {
           isNetworkArc: true,
           startCity: topCities[i].name,
-          endCity: target.name
+          endCity: target.name,
+          baseOpacity: 0.25
         };
         this.networksGroup.add(line);
       }
