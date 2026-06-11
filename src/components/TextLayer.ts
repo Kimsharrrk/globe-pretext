@@ -59,8 +59,8 @@ export class TextLayer {
     const radius = this.globeRadius;
     
     // Level 1: Space view (dist > radius * 2.5) -> show only satellites
-    // Level 2: Continent view (radius * 1.2 < dist <= radius * 2.5) -> show flights
-    // Level 3: City view (dist <= radius * 1.2) -> show weather/news (mocked as flights for now)
+    // Level 2: Continent view (radius * 1.2 < dist <= radius * 2.5) -> show cities
+    // Level 3: City view (dist <= radius * 1.2) -> show weather/news
     let zoomLevel = 1;
     if (dist <= radius * 1.2) zoomLevel = 3;
     else if (dist <= radius * 2.5) zoomLevel = 2;
@@ -72,7 +72,7 @@ export class TextLayer {
     for (const data of sortedData) {
       // Zoom Level Filtering
       if (zoomLevel === 1 && !data.id.startsWith('sat_') && !data.id.startsWith('city_')) continue;
-      if (zoomLevel === 2 && !data.id.startsWith('flight_') && !data.id.startsWith('city_')) continue;
+      if (zoomLevel === 2 && !data.id.startsWith('city_')) continue;
       if (zoomLevel === 3 && data.id.startsWith('sat_')) continue;
 
       let worldPos = data.position;
@@ -184,7 +184,7 @@ export class TextLayer {
 
     for (const data of dataPoints) {
       if (zoomLevel === 1 && !data.id.startsWith('sat_') && !data.id.startsWith('city_')) continue;
-      if (zoomLevel === 2 && !data.id.startsWith('flight_') && !data.id.startsWith('city_')) continue;
+      if (zoomLevel === 2 && !data.id.startsWith('city_')) continue;
       if (zoomLevel === 3 && data.id.startsWith('sat_')) continue;
 
       if (!isPointVisible(data.position, this.globeCenter, this.camera.position)) continue;

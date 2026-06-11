@@ -14,14 +14,10 @@ export type DataEvent =
   | { type: 'CITIES_UPDATED', data: any[] }
   | { type: 'SATELLITE_SWARM_UPDATED', payload: any[] };
 
-let flightInterval: number | null = null;
 let satelliteInterval: number | null = null;
 let cityInterval: number | null = null;
 let isRunning = false;
 let allSatellites: any[] = [];
-
-// History for trails
-const flightHistory: Record<string, {lat: number, lon: number, alt: number}[]> = {};
 
 // Hardcoded robust city/country data with real populations to guarantee requirements are met
 const CITIES_DATA = [
@@ -85,67 +81,7 @@ const processCities = async () => {
   }
 };
 
-const fetchFlights = async () => {
-  if (!isRunning) return;
-  try {
-    const res = await fetch('/api/flights');
-    if (!res.ok) throw new Error(`OpenSky fetch failed: ${res.status}`);
-    const data = await res.json();
-    
-    const states = data.states.slice(0, 100);
-    const flights = states.map((s: any) => {
-      const id = `flight_${s[0]}`;
-      const f = {
-        id,
-        callsign: s[1]?.trim() || 'UNKNOWN',
-        lon: s[5],
-        lat: s[6],
-        alt: (s[7] || 10000) / 1000,
-        velocity: (s[9] || 0) * 3.6,
-        heading: s[10] || 0
-      };
-      
-      if (!flightHistory[id]) flightHistory[id] = [];
-      flightHistory[id].push({lat: f.lat, lon: f.lon, alt: f.alt});
-      if (flightHistory[id].length > 5) flightHistory[id].shift();
-      
-      return { ...f, history: flightHistory[id] };
-    }).filter((f: any) => f.lat !== null && f.lon !== null);
-
-    postMessage({ type: 'FLIGHTS_UPDATED', data: flights });
-  } catch (err) {
-    const mockFlights = Array.from({length: 50}).map((_, i) => {
-      const id = `flight_mock_${i}`;
-      // Move mock flights to simulate real movement
-      if (!flightHistory[id]) {
-        flightHistory[id] = [];
-        flightHistory[id].push({
-          lat: (Math.random() - 0.5) * 160,
-          lon: (Math.random() - 0.5) * 360,
-          alt: 10 + Math.random() * 2
-        });
-      }
-      const last = flightHistory[id][flightHistory[id].length - 1];
-      const nextLat = last.lat + (Math.random() - 0.5) * 0.5;
-      const nextLon = last.lon + (Math.random() - 0.5) * 0.5;
-      
-      flightHistory[id].push({ lat: nextLat, lon: nextLon, alt: last.alt });
-      if (flightHistory[id].length > 5) flightHistory[id].shift();
-
-      return {
-        id,
-        callsign: `MOCK-${100+i}`,
-        lat: nextLat,
-        lon: nextLon,
-        alt: last.alt,
-        velocity: 800 + Math.random() * 100,
-        heading: 90,
-        history: flightHistory[id]
-      };
-    });
-    postMessage({ type: 'FLIGHTS_UPDATED', data: mockFlights });
-  }
-};
+// (fetchFlights was removed)
 
 async function fetchCelesTrak() {
   try {
@@ -267,8 +203,6 @@ const handleMessage = (type: string, payload?: any) => {
     case 'START':
       if (!isRunning) {
         isRunning = true;
-        fetchFlights();
-        flightInterval = setInterval(fetchFlights, 10000) as any;
         processCities();
         cityInterval = setInterval(processCities, 60000) as any;
         fetchCelesTrak().then(() => {
@@ -280,13 +214,10 @@ const handleMessage = (type: string, payload?: any) => {
     case 'TOGGLE':
       if (isRunning) {
         isRunning = false;
-        if (flightInterval) clearInterval(flightInterval);
         if (cityInterval) clearInterval(cityInterval);
         if (satelliteInterval) clearInterval(satelliteInterval);
       } else {
         isRunning = true;
-        fetchFlights();
-        flightInterval = setInterval(fetchFlights, 10000) as any;
         processCities();
         cityInterval = setInterval(processCities, 60000) as any;
         fetchCelesTrak().then(() => {

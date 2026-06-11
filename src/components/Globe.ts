@@ -162,79 +162,8 @@ export class GlobeApp {
     }
   }
 
-  private planeGeometry: THREE.BufferGeometry | null = null;
-
-  public addFlightPaths(flights: any[]) {
-    while (this.flightsGroup.children.length > 0) {
-      const child = this.flightsGroup.children[0] as THREE.Line | THREE.Mesh;
-      this.flightsGroup.remove(child);
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) (child.material as THREE.Material).dispose();
-    }
-
-    if (!this.planeGeometry) {
-      const shape = new THREE.Shape();
-      shape.moveTo(0, 1.5);
-      shape.lineTo(0.3, 0.5);
-      shape.lineTo(1.2, 0.2);
-      shape.lineTo(1.2, -0.2);
-      shape.lineTo(0.2, -0.5);
-      shape.lineTo(0.2, -1.2);
-      shape.lineTo(0.5, -1.5);
-      shape.lineTo(-0.5, -1.5);
-      shape.lineTo(-0.2, -1.2);
-      shape.lineTo(-0.2, -0.5);
-      shape.lineTo(-1.2, -0.2);
-      shape.lineTo(-1.2, 0.2);
-      shape.lineTo(-0.3, 0.5);
-      shape.lineTo(0, 1.5);
-      this.planeGeometry = new THREE.ShapeGeometry(shape);
-      this.planeGeometry.rotateX(Math.PI / 2);
-    }
-
-    const planeMat = new THREE.MeshBasicMaterial({ color: 0xffff00, side: THREE.DoubleSide });
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.5 });
-    const t = (window as any).uMorph || 0;
-
-    for (const f of flights) {
-      if (f.history && f.history.length > 1) {
-        const points = f.history.map((h: any) => {
-          const pos = this.latLonToVector3Local(h.lat, h.lon, (h.alt || 10) / 63.71);
-          if (t > 0) {
-            const flatX = (h.lon / 180) * 100 * Math.PI;
-            const flatY = (h.lat / 90) * 100 * (Math.PI / 2);
-            const alt = pos.length() - 100;
-            pos.lerp(new THREE.Vector3(flatX, flatY, alt), t);
-          }
-          return pos;
-        });
-        const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-        const line = new THREE.Line(lineGeo, lineMat);
-        this.flightsGroup.add(line);
-      }
-
-      const planeMesh = new THREE.Mesh(this.planeGeometry, planeMat);
-      const pos = this.latLonToVector3Local(f.lat, f.lon, (f.alt || 10) / 63.71);
-      
-      if (t > 0) {
-         const flatX = (f.lon / 180) * 100 * Math.PI;
-         const flatY = (f.lat / 90) * 100 * (Math.PI / 2);
-         const alt = pos.length() - 100;
-         pos.lerp(new THREE.Vector3(flatX, flatY, alt), t);
-      }
-      planeMesh.position.copy(pos);
-      
-      const normal = pos.clone().normalize();
-      if (t > 0.5) {
-        planeMesh.lookAt(planeMesh.position.clone().add(new THREE.Vector3(0, 0, 1)));
-        planeMesh.rotateZ(-f.heading * Math.PI / 180);
-      } else {
-        planeMesh.lookAt(planeMesh.position.clone().add(normal));
-        planeMesh.rotateZ(-f.heading * Math.PI / 180);
-      }
-
-      this.flightsGroup.add(planeMesh);
-    }
+  public addFlightPaths(_flights: any[]) {
+    // Flight rendering disabled to reduce visual clutter
   }
 
   private latLonToVector3Local(lat: number, lon: number, alt: number): THREE.Vector3 {

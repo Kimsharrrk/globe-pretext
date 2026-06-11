@@ -21,35 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     worker.onmessage = (e) => {
       const { type, data } = e.data;
       
-      if (type === 'FLIGHTS_UPDATED') {
-        let flightTextData: TextData[] = [];
-        for (const f of data) {
-           flightTextData.push({
-             id: f.id,
-             position: latLonToVector3(f.lat, f.lon, 100 + (f.alt / 63.71)),
-             text: `✈ ${f.callsign}\nSpd: ${Math.round(f.velocity)}km/h`,
-             color: '#ffff00',
-             fontSize: 10
-           });
-           
-           if (f.history) {
-             for (let i = 0; i < f.history.length; i++) {
-                const hist = f.history[i];
-                const alpha = ((i + 1) / (f.history.length + 1)).toFixed(2);
-                flightTextData.push({
-                  id: `${f.id}_trail_${i}`,
-                  position: latLonToVector3(hist.lat, hist.lon, 100 + (hist.alt / 63.71)),
-                  text: '•', 
-                  color: `rgba(255, 255, 0, ${alpha})`,
-                  fontSize: 10
-                });
-             }
-           }
-        }
-        
-        activeTextData = [...activeTextData.filter(d => !d.id.startsWith('flight_')), ...flightTextData];
-        globeApp.addFlightPaths(data);
-      }
+
       
       if (type === 'SATELLITE_SWARM_UPDATED') {
         globeApp.updateSatelliteSwarm(data);
@@ -360,9 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
               `;
             }
-          } else if (hit.id.startsWith('flight_')) {
-            infoSubtitle.innerText = 'Flight Information';
-            infoDesc.innerHTML = `Velocity: ${hit.text.split('Spd: ')[1]}`;
+
           } else if (hit.id.startsWith('sat_')) {
             infoSubtitle.innerText = 'Satellite Info';
             infoDesc.innerHTML = `Status: Active<br/>Orbit: LEO (Low Earth Orbit)`;
