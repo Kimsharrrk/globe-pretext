@@ -77,6 +77,11 @@ document.addEventListener('DOMContentLoaded', () => {
         globeApp.addOrbits(data);
       }
 
+      if (type === 'ORBIT_READY') {
+        const orbitVectors = data.map((p: any) => latLonToVector3(p.lat, p.lon, 100 + (p.alt / 63.71)));
+        globeApp.drawSelectedSatelliteOrbit(orbitVectors);
+      }
+
       if (type === 'CITIES_UPDATED') {
         (window as any).currentCityData = data;
         if ((window as any).showNetworks !== false) {
@@ -219,7 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
       snapTimeout = setTimeout(() => {
         const centerRay = new THREE.Raycaster();
         centerRay.setFromCamera(new THREE.Vector2(0, 0), globeApp.camera);
-        const intersects = centerRay.intersectObject(globeApp.earthMesh);
+        if (globeApp.earthMesh) {
+          const intersects = centerRay.intersectObject(globeApp.earthMesh);
         if (intersects.length > 0) {
            const point = intersects[0].point;
            // Convert 3D point to lat/lon (assuming radius 100)
@@ -251,8 +257,9 @@ document.addEventListener('DOMContentLoaded', () => {
                }, 1000);
              }
            }
+         }
         }
-      }, 300); // 300ms after user stops dragging
+      }, 500); // 300ms after user stops dragging
     });
 
     // UI Interaction
@@ -260,14 +267,69 @@ document.addEventListener('DOMContentLoaded', () => {
     const infoTitle = document.getElementById('info-title');
     const infoSubtitle = document.getElementById('info-subtitle');
     const infoDesc = document.getElementById('info-desc');
-    const popupClose = document.getElementById('info-close');
-    
-    if (popupClose && infoPanel) {
-      popupClose.addEventListener('click', () => {
+    const infoClose = document.getElementById('info-close');
+
+    if (infoClose && infoPanel) {
+      infoClose.addEventListener('click', () => {
         infoPanel.style.display = 'none';
+        globeApp.drawSelectedSatelliteOrbit([]); // Clear orbit line
       });
     }
 
+    // Global Click Handler for Interactions
+    globeApp.renderer.domElement.addEventListener('pointerdown', (e) => {
+      // Don't trigger if user is just clicking on UI
+      if ((e.target as HTMLElement).closest('#ui-layer')) return;
+
+      const result = globeApp.handleGlobalClick(e.clientX, e.clientY);
+      
+      if (result && infoPanel && infoTitle && infoSubtitle && infoDesc) {
+        if (result.type === 'satellite') {
+          const s = result.data;
+          infoPanel.style.display = 'block';
+          infoTitle.textContent = s.name;
+          infoSubtitle.textContent = s.type === 'payload' ? 'ACTIVE SATELLITE' : 'SPACE DEBRIS/ROCKET';
+          
+          infoDesc.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+              <div style="color: #888;">ID</div><div style="text-align: right;">${s.id}</div>
+              <div style="color: #888;">Altitude</div><div style="text-align: right;">${Math.round(s.alt)} km</div>
+              <div style="color: #888;">Lat / Lon</div><div style="text-align: right;">${s.lat.toFixed(2)}° / ${s.lon.toFixed(2)}°</div>
+            </div>
+            <div style="margin-top: 15px; color: #00ffff; font-size: 12px; cursor: pointer;">
+              ▶ Orbit Tracking Active
+            </div>
+          `;
+
+          // Ask worker for orbit line projection
+          worker.postMessage({ type: 'GET_ORBIT', payload: s.name });
+
+        } else if (result.type === 'city') {
+          const c = result.data;
+          infoPanel.style.display = 'block';
+          infoTitle.textContent = c.name;
+          infoSubtitle.textContent = c.country || 'Global City';
+          
+          infoDesc.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+              <div style="color: #888;">Population</div><div style="text-align: right;">${(c.pop || 0).toLocaleString()}</div>
+              <div style="color: #888;">Local Time</div><div style="text-align: right;">${c.time || 'N/A'}</div>
+              <div style="color: #888;">Weather</div><div style="text-align: right;">${c.weather || 'N/A'}</div>
+            </div>
+            <div style="margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px;">
+              <strong style="color: #ffaa00;">Latest News:</strong><br>
+              ${c.news || 'No active headlines'}
+            </div>
+          `;
+          globeApp.drawSelectedSatelliteOrbit([]); // Clear orbit if a city is clicked
+        }
+      } else {
+        // Clicked empty space
+        if (infoPanel) infoPanel.style.display = 'none';
+        globeApp.drawSelectedSatelliteOrbit([]);
+      }
+    });
+    
     const overlay = document.getElementById('text-overlay') as HTMLCanvasElement;
     if (overlay) {
       overlay.addEventListener('click', (e) => {

@@ -4,11 +4,12 @@ import { gsap } from 'gsap';
 
 export class GlobeApp {
   public scene: THREE.Scene;
-  private renderer: THREE.WebGLRenderer;
+  public renderer: THREE.WebGLRenderer;
   public camera: THREE.PerspectiveCamera;
   public controls: OrbitControls;
-  public earthMesh!: THREE.Mesh;
+  public earthMesh: THREE.Mesh | null = null;
   public globeGroup: THREE.Group;
+  private atmMesh: THREE.Mesh | null = null;
   
   private container: HTMLElement;
   private reqId: number = 0;
@@ -20,6 +21,11 @@ export class GlobeApp {
   private satSwarmPoints: THREE.Points;
   private bordersGroup: THREE.Group;
   private networksGroup: THREE.Group;
+
+  private satellitesData: any[] = [];
+  private selectedSatelliteOrbit: THREE.Line | null = null;
+  private raycaster = new THREE.Raycaster();
+  private mouse = new THREE.Vector2();
 
   constructor(containerId: string) {
     const container = document.getElementById(containerId);
@@ -84,7 +90,7 @@ export class GlobeApp {
     this.initGlobe();
     this.initLights();
     this.loadBorders();
-    this.initInteraction();
+
 
     // 6. Resize Handler
     window.addEventListener('resize', this.onWindowResize.bind(this));
@@ -121,8 +127,8 @@ export class GlobeApp {
       side: THREE.BackSide,
       depthWrite: false
     });
-    const atmMesh = new THREE.Mesh(atmGeometry, atmMaterial);
-    this.globeGroup.add(atmMesh);
+    this.atmMesh = new THREE.Mesh(atmGeometry, atmMaterial);
+    this.globeGroup.add(this.atmMesh);
   }
 
   // Removed duplicate orbitsGroup
@@ -265,9 +271,10 @@ export class GlobeApp {
     }
   }
 
-  public updateSatelliteSwarm(sats: any[]) {
-    if (!this.satSwarmGeometry) return;
-    const count = sats.length;
+  public updateSatelliteSwarm(data: any[]) {
+    this.satellitesData = data;
+    const count = data.length;
+    if (count === 0) return;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     
@@ -279,7 +286,7 @@ export class GlobeApp {
     const t = (window as any).uMorph || 0;
 
     for (let i = 0; i < count; i++) {
-      const s = sats[i];
+      const s = data[i];
       const pos = this.latLonToVector3Local(s.lat, s.lon, s.alt / 63.71);
       
       if (t > 0) {
@@ -308,6 +315,62 @@ export class GlobeApp {
     this.satSwarmGeometry.attributes.position.needsUpdate = true;
     this.satSwarmGeometry.attributes.color.needsUpdate = true;
     this.satSwarmGeometry.computeBoundingSphere();
+  }
+
+  public handleGlobalClick(clientX: number, clientY: number): any {
+    this.mouse.x = (clientX / window.innerWidth) * 2 - 1;
+    this.mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    this.raycaster.params.Points.threshold = 3.0; // Make it easier to click points
+
+    // Raycast satellites
+    if (this.satSwarmPoints && this.satSwarmPoints.visible) {
+      const intersects = this.raycaster.intersectObject(this.satSwarmPoints);
+      if (intersects.length > 0) {
+        const index = intersects[0].index;
+        if (index !== undefined && this.satellitesData[index]) {
+          return { type: 'satellite', data: this.satellitesData[index] };
+        }
+      }
+    }
+
+    // Raycast spikes (Cities)
+    if (this.spikesMesh && this.spikesMesh.visible) {
+      const intersects = this.raycaster.intersectObject(this.spikesMesh);
+      if (intersects.length > 0) {
+        const instanceId = intersects[0].instanceId;
+        const cities = (window as any).currentCityData || [];
+        if (instanceId !== undefined && cities[instanceId]) {
+          return { type: 'city', data: cities[instanceId] };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  public drawSelectedSatelliteOrbit(orbitPoints: THREE.Vector3[]) {
+    if (this.selectedSatelliteOrbit) {
+      this.globeGroup.remove(this.selectedSatelliteOrbit);
+      this.selectedSatelliteOrbit.geometry.dispose();
+      (this.selectedSatelliteOrbit.material as THREE.Material).dispose();
+      this.selectedSatelliteOrbit = null;
+    }
+
+    if (!orbitPoints || orbitPoints.length === 0) return;
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
+    this.setupMorphGeometry(geometry);
+    
+    const material = new THREE.LineBasicMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.6,
+      linewidth: 2
+    });
+
+    this.selectedSatelliteOrbit = new THREE.Line(geometry, material);
+    this.globeGroup.add(this.selectedSatelliteOrbit);
   }
 
   public toggleSatellites(enabled: boolean) {
@@ -566,6 +629,16 @@ export class GlobeApp {
       }
     });
 
+    // 2D Polish: Fade out the globe and atmosphere to emphasize the flat map data
+    if (this.earthMesh && this.earthMesh.material) {
+      (this.earthMesh.material as THREE.Material).transparent = true;
+      (this.earthMesh.material as THREE.Material).opacity = THREE.MathUtils.lerp(1.0, 0.05, t);
+    }
+    if (this.atmMesh && this.atmMesh.material) {
+      (this.atmMesh.material as THREE.Material).transparent = true;
+      (this.atmMesh.material as THREE.Material).opacity = THREE.MathUtils.lerp(0.8, 0.0, t);
+    }
+
     // Re-trigger dynamic updates to apply morphs
     if ((window as any).showSpikes) {
       this.updatePopulationSpikes((window as any).currentCityData || [], true);
@@ -662,29 +735,6 @@ export class GlobeApp {
     this.camera.updateProjectionMatrix();
     
     this.renderer.setSize(width, height);
-  }
-
-  private raycaster = new THREE.Raycaster();
-  private mouse = new THREE.Vector2();
-
-  private initInteraction() {
-    this.renderer.domElement.addEventListener('pointerdown', (event) => {
-      // Calculate mouse position in normalized device coordinates (-1 to +1)
-      const rect = this.renderer.domElement.getBoundingClientRect();
-      this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      // Raycast
-      this.raycaster.setFromCamera(this.mouse, this.camera);
-      const intersects = this.raycaster.intersectObjects(this.globeGroup.children);
-
-      if (intersects.length > 0) {
-        // Trigger a custom event or callback
-        const hitPoint = intersects[0].point;
-        console.log('Globe clicked at 3D point:', hitPoint);
-        // We can pass this out to UI
-      }
-    });
   }
 
   public onRender?: () => void;

@@ -149,7 +149,7 @@ const fetchFlights = async () => {
 
 async function fetchCelesTrak() {
   try {
-    const res = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
+    const res = await fetch('/active.txt');
     const text = await res.text();
     const lines = text.split('\n');
     allSatellites = [];
@@ -235,8 +235,35 @@ async function fetchSatellites() {
   postMessage({ type: 'SATELLITE_SWARM_UPDATED', data: results });
 }
 
-const handleMessage = (type: string) => {
+const handleMessage = (type: string, payload?: any) => {
   switch (type) {
+    case 'SET_PRETEXT_MODE':
+      processCities();
+      break;
+    case 'GET_ORBIT': {
+      const satName = payload;
+      const sat = allSatellites.find((s: any) => s.name === satName);
+      if (sat) {
+        // Calculate orbit for the next 100 minutes (approx 1 orbit for LEO)
+        const orbitPoints = [];
+        const now = new Date();
+        for (let i = 0; i <= 100; i++) {
+          const t = new Date(now.getTime() + i * 60000);
+          const posVel = satellite.propagate(sat, t);
+          const posEci = posVel.position as any;
+          if (posEci && typeof posEci.x === 'number') {
+            const posGd = satellite.eciToGeodetic(posEci, satellite.gstime(t));
+            orbitPoints.push({
+              lat: satellite.degreesLat(posGd.latitude),
+              lon: satellite.degreesLong(posGd.longitude),
+              alt: posGd.height
+            });
+          }
+        }
+        postMessage({ type: 'ORBIT_READY', data: orbitPoints });
+      }
+      break;
+    }
     case 'START':
       if (!isRunning) {
         isRunning = true;
@@ -272,5 +299,5 @@ const handleMessage = (type: string) => {
 };
 
 self.onmessage = (e: MessageEvent<WorkerMessage>) => {
-  handleMessage(e.data.type);
+  handleMessage(e.data.type, (e.data as any).payload);
 };
