@@ -68,9 +68,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const cityTextData: TextData[] = data.map((c: any) => {
-          const logPop = Math.log10(c.pop || 50000);
+          const pop = c.pop || 50000;
+          const logPop = Math.log10(pop);
           const size = Math.max(8, Math.pow(Math.max(0, logPop - 4.5), 1.5) * 6);
-          const color = size > 16 ? '#00ffff' : size > 12 ? '#aaffaa' : '#aaaaaa';
+          
+          let color = '#888888';
+          if (pop > 20000000) color = '#ff00ff';       // Hot Pink (Beijing)
+          else if (pop > 10000000) color = '#ff3300';  // Orange-Red (Tokyo)
+          else if (pop > 5000000) color = '#ffcc00';   // Yellow-Gold (Seoul, NY)
+          else if (pop > 2000000) color = '#33ff33';   // Neon Green (Busan)
+          else if (pop > 1000000) color = '#00ffff';   // Cyan (Daejeon)
+          else color = '#888888';                      // Muted Gray (Jeju, Jeonju)
           
           return {
             id: `city_${c.name}`,

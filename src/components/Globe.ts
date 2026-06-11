@@ -433,10 +433,13 @@ export class GlobeApp {
       dummy.updateMatrix();
       this.spikesMesh.setMatrixAt(i, dummy.matrix);
       
-      if (c.pop > 10000000) color.setHex(0xffffff);
-      else if (c.pop > 5000000) color.setHex(0x00ffcc);
-      else if (c.pop > 1000000) color.setHex(0x00aa88);
-      else color.setHex(0x004433);
+      const pop = c.pop || 50000;
+      if (pop > 20000000) color.setHex(0xff00ff);       // Hot Pink (Beijing)
+      else if (pop > 10000000) color.setHex(0xff3300);  // Orange-Red (Tokyo)
+      else if (pop > 5000000) color.setHex(0xffcc00);   // Yellow-Gold (Seoul, NY)
+      else if (pop > 2000000) color.setHex(0x33ff33);   // Neon Green (Busan)
+      else if (pop > 1000000) color.setHex(0x00ffff);   // Cyan (Daejeon)
+      else color.setHex(0x555555);                      // Muted Gray (Jeju, Jeonju)
       
       this.spikesMesh.setColorAt(i, color);
     }
