@@ -178,25 +178,15 @@ export class GlobeApp {
   }
 
   public setPretextMode(enabled: boolean) {
-    const earthMesh = this.globeGroup.children[0] as THREE.Mesh;
-    if (earthMesh) {
-      if (enabled) {
-        earthMesh.material = new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: true });
-        this.bordersGroup.visible = true;
-        this.scene.background = new THREE.Color(0x050510);
-      } else {
-        const textureLoader = new THREE.TextureLoader();
-        earthMesh.material = new THREE.MeshPhongMaterial({
-          map: textureLoader.load('/textures/earth-blue-marble.jpg'),
-          bumpMap: textureLoader.load('/textures/earth-topology.png'),
-          bumpScale: 1.0,
-          specularMap: textureLoader.load('/textures/earth-water.png'),
-          specular: new THREE.Color(0x333333),
-          shininess: 15,
-        });
-        this.bordersGroup.visible = false;
-        this.scene.background = new THREE.Color(0x000000);
-      }
+    if (this.earthMesh) this.earthMesh.visible = !enabled;
+    if (this.atmMesh) this.atmMesh.visible = !enabled;
+    
+    if (enabled) {
+      this.bordersGroup.visible = true;
+      this.scene.background = new THREE.Color(0x050510);
+    } else {
+      this.bordersGroup.visible = false;
+      this.scene.background = new THREE.Color(0x000000);
     }
   }
 
@@ -344,29 +334,42 @@ export class GlobeApp {
     if (t > 0) this.applyMorph();
   }
 
-  public highlightedNetworkArc: THREE.Line | null = null;
+  public highlightedCityName: string | null = null;
 
   public highlightNetworkArc(line: THREE.Line) {
-    this.clearHighlightedNetworkArc();
-    this.highlightedNetworkArc = line;
-    const mat = line.material as THREE.LineBasicMaterial;
-    mat.opacity = 1.0;
-    mat.color.setHex(0xffff00); // Highlight with bright yellow
+    this.highlightNetworkArcsForCity(line.userData.startCity);
+  }
+
+  public highlightNetworkArcsForCity(cityName: string) {
+    this.highlightedCityName = cityName;
+    this.networksGroup.children.forEach((child) => {
+      const l = child as THREE.Line;
+      const mat = l.material as THREE.LineBasicMaterial;
+      if (l.userData.startCity === cityName || l.userData.endCity === cityName) {
+        mat.opacity = 1.0;
+        mat.color.setHex(0xffff00); // Highlight bright yellow
+        // optionally scale or make it thicker (linewidth is generally 1 in webgl, so opacity/color is best)
+      } else {
+        mat.opacity = 0.05; // dim others significantly
+        mat.color.setHex(0xff00ff);
+      }
+    });
   }
 
   public clearHighlightedNetworkArc() {
-    if (this.highlightedNetworkArc) {
-      const mat = this.highlightedNetworkArc.material as THREE.LineBasicMaterial;
+    this.highlightedCityName = null;
+    this.networksGroup.children.forEach((child) => {
+      const l = child as THREE.Line;
+      const mat = l.material as THREE.LineBasicMaterial;
       mat.opacity = 0.25;
-      mat.color.setHex(0xff00ff); // Restore to neon magenta
-      this.highlightedNetworkArc = null;
-    }
+      mat.color.setHex(0xff00ff);
+    });
   }
 
   public drawNetworkArcs(cities: any[]) {
     // Clear existing
-    if (this.highlightedNetworkArc) {
-      this.highlightedNetworkArc = null;
+    if (this.highlightedCityName) {
+      this.highlightedCityName = null;
     }
     while (this.networksGroup.children.length > 0) {
       const child = this.networksGroup.children[0] as THREE.Line;

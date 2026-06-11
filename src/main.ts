@@ -219,6 +219,51 @@ document.addEventListener('DOMContentLoaded', () => {
       // Don't trigger if user is just clicking on UI
       if ((e.target as HTMLElement).closest('#ui-layer')) return;
 
+      // 1. First check if they clicked on 2D Text Overlay
+      const rect = globeApp.renderer.domElement.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      const textHit = textLayer.getHitData(clickX, clickY, activeTextData);
+      
+      if (textHit && infoPanel && infoTitle && infoDesc && infoSubtitle) {
+        infoTitle.innerText = textHit.text.split('\n')[0].replace('📍', '').replace('✈', '').replace('🛰', '').trim();
+        
+        if (textHit.id.startsWith('city_')) {
+          const cityName = textHit.id.replace('city_', '');
+          const rawCity = (window as any).cityDetails?.find((c: any) => c.name === cityName);
+          if (rawCity) {
+            globeApp.highlightNetworkArcsForCity(rawCity.name);
+            infoSubtitle.innerText = `${rawCity.country} | Pop: ${(rawCity.pop / 1000000).toFixed(1)}M`;
+            infoDesc.innerHTML = `
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 13px;">
+                <div style="color: #aaa;">국가 (Country)</div>
+                <div style="text-align: right; font-weight: 500;">${rawCity.country}</div>
+                <div style="color: #aaa;">인구수 (Population)</div>
+                <div style="text-align: right; font-weight: 500; color: #ffcc00;">${(rawCity.pop || 0).toLocaleString()}명</div>
+                <div style="color: #aaa;">현지 시간 (Local Time)</div>
+                <div style="text-align: right; font-weight: 500;">${rawCity.time || 'N/A'}</div>
+                <div style="color: #aaa;">현재 날씨 (Weather)</div>
+                <div style="text-align: right; font-weight: 500; color: #00ffff;">${rawCity.weather || 'N/A'}</div>
+              </div>
+              <div style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; border-left: 3px solid #ffaa00;">
+                <strong style="color: #ffaa00; display: block; margin-bottom: 5px;">📰 실시간 뉴스 (Latest News)</strong>
+                <span style="color: #ddd; line-height: 1.4;">${rawCity.news || 'No active headlines'}</span>
+              </div>
+            `;
+            globeApp.drawSelectedSatelliteOrbit([]);
+          }
+        } else if (textHit.id.startsWith('sat_')) {
+          globeApp.clearHighlightedNetworkArc();
+          infoSubtitle.innerText = 'Satellite Info';
+          infoDesc.innerHTML = `Status: Active<br/>Orbit: LEO (Low Earth Orbit)`;
+        }
+        
+        infoPanel.style.display = 'block';
+        infoPanel.style.opacity = '1';
+        return; // Click was handled by text layer, stop here
+      }
+
+      // 2. If no text was clicked, proceed to raycast 3D objects
       const result = globeApp.handleGlobalClick(e.clientX, e.clientY);
       
       if (result && infoPanel && infoTitle && infoSubtitle && infoDesc) {
@@ -245,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } else if (result.type === 'city') {
           const c = result.data;
-          globeApp.clearHighlightedNetworkArc();
+          globeApp.highlightNetworkArcsForCity(c.name);
           infoPanel.style.display = 'block';
           infoTitle.textContent = c.name;
           infoSubtitle.textContent = c.country || 'Global City';
@@ -269,18 +314,16 @@ document.addEventListener('DOMContentLoaded', () => {
           globeApp.drawSelectedSatelliteOrbit([]); // Clear orbit if a city is clicked
         } else if (result.type === 'network') {
           const line = result.data;
-          globeApp.highlightNetworkArc(line);
+          globeApp.highlightNetworkArcsForCity(line.userData.startCity);
           infoPanel.style.display = 'block';
           infoTitle.textContent = 'Network Connection';
-          infoSubtitle.textContent = 'Active Network Arc';
+          infoSubtitle.textContent = 'Active Network Arcs';
           infoDesc.innerHTML = `
             <div style="display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; text-align: center;">
-              <div style="font-size: 16px; font-weight: bold; color: #ffaa00;">${line.userData.startCity}</div>
-              <div style="color: #888;">⟷</div>
-              <div style="font-size: 16px; font-weight: bold; color: #ffaa00;">${line.userData.endCity}</div>
+              <div style="font-size: 16px; font-weight: bold; color: #ffaa00;">Highlighting routes for: ${line.userData.startCity}</div>
             </div>
             <p style="margin-top: 15px; font-size: 13px; color: #aaa; text-align: center;">
-              This arc represents a high-speed data connection between these two global cities.
+              Showing all high-speed data connections originating from or connecting to this city.
             </p>
           `;
           globeApp.drawSelectedSatelliteOrbit([]);
@@ -292,55 +335,6 @@ document.addEventListener('DOMContentLoaded', () => {
         globeApp.clearHighlightedNetworkArc();
       }
     });
-    
-    const overlay = document.getElementById('text-overlay') as HTMLCanvasElement;
-    if (overlay) {
-      overlay.addEventListener('click', (e) => {
-        const rect = overlay.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
-
-        const hit = textLayer.getHitData(clickX, clickY, activeTextData);
-        
-        if (hit && infoPanel && infoTitle && infoDesc && infoSubtitle) {
-          infoTitle.innerText = hit.text.split('\n')[0].replace('📍', '').replace('✈', '').replace('🛰', '').trim();
-          
-          if (hit.id.startsWith('city_')) {
-            const rawCity = (window as any).cityDetails?.find((c: any) => c.id === hit.id);
-            if (rawCity) {
-              globeApp.clearHighlightedNetworkArc();
-              infoSubtitle.innerText = `${rawCity.country} | Pop: ${(rawCity.pop / 1000000).toFixed(1)}M`;
-              infoDesc.innerHTML = `
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 13px;">
-                  <div style="color: #aaa;">국가 (Country)</div>
-                  <div style="text-align: right; font-weight: 500;">${rawCity.country}</div>
-                  <div style="color: #aaa;">인구수 (Population)</div>
-                  <div style="text-align: right; font-weight: 500; color: #ffcc00;">${(rawCity.pop || 0).toLocaleString()}명</div>
-                  <div style="color: #aaa;">현지 시간 (Local Time)</div>
-                  <div style="text-align: right; font-weight: 500;">${rawCity.time || 'N/A'}</div>
-                  <div style="color: #aaa;">현재 날씨 (Weather)</div>
-                  <div style="text-align: right; font-weight: 500; color: #00ffff;">${rawCity.weather || 'N/A'}</div>
-                </div>
-                <div style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; border-left: 3px solid #ffaa00;">
-                  <strong style="color: #ffaa00; display: block; margin-bottom: 5px;">📰 실시간 뉴스 (Latest News)</strong>
-                  <span style="color: #ddd; line-height: 1.4;">${rawCity.news || 'No active headlines'}</span>
-                </div>
-              `;
-            }
-
-          } else if (hit.id.startsWith('sat_')) {
-            globeApp.clearHighlightedNetworkArc();
-            infoSubtitle.innerText = 'Satellite Info';
-            infoDesc.innerHTML = `Status: Active<br/>Orbit: LEO (Low Earth Orbit)`;
-          }
-          
-          infoPanel.style.display = 'block';
-          infoPanel.style.opacity = '1';
-        } else if (infoPanel) {
-          infoPanel.style.display = 'none';
-        }
-      });
-    }
 
     globeApp.onRender = () => {
       // Pass the live data from worker to the TextLayer
