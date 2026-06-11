@@ -1,3 +1,5 @@
+import * as satellite from 'satellite.js';
+
 export type WorkerMessage = 
   | { type: 'START' }
   | { type: 'STOP' }
@@ -9,14 +11,14 @@ export type DataEvent =
   | { type: 'FLIGHTS_UPDATED', data: any[] }
   | { type: 'SATELLITES_UPDATED', data: any[] }
   | { type: 'ORBITS_UPDATED', data: any[] }
-  | { type: 'CITIES_UPDATED', data: any[] };
+  | { type: 'CITIES_UPDATED', data: any[] }
+  | { type: 'SATELLITE_SWARM_UPDATED', payload: any[] };
 
 let flightInterval: number | null = null;
 let satelliteInterval: number | null = null;
 let cityInterval: number | null = null;
-let activeSatellites: any[] = [];
-let satelliteModule: any = null;
 let isRunning = false;
+let allSatellites: any[] = [];
 
 // History for trails
 const flightHistory: Record<string, {lat: number, lon: number, alt: number}[]> = {};
@@ -57,8 +59,6 @@ const CITIES_DATA = [
   { id: 'city_au_sydney', name: 'Sydney', country: 'Australia', lat: -33.8688, lon: 151.2093, pop: 5312000 }
 ];
 
-let isPretextMode = false;
-
 let globalCities: any[] = [];
 
 async function fetchGlobalCities() {
@@ -75,34 +75,14 @@ async function fetchGlobalCities() {
 }
 
 const processCities = async () => {
-  if (isPretextMode) {
-    const points = await fetchGlobalCities();
+  const points = await fetchGlobalCities();
+  if (points && points.length > 0) {
     postMessage({ type: 'CITIES_UPDATED', data: points });
-    return;
+  } else {
+    // Fallback if fetch fails
+    const fallback = CITIES_DATA.map(c => ({...c}));
+    postMessage({ type: 'CITIES_UPDATED', data: fallback });
   }
-
-  const cities = CITIES_DATA.map(c => {
-    // Calculate Timezone roughly based on longitude
-    const tzOffset = Math.round(c.lon / 15);
-    const date = new Date();
-    date.setUTCHours(date.getUTCHours() + tzOffset);
-    const timeStr = date.toISOString().substr(11, 5); // HH:mm
-    
-    const weathers = ['☀️ Clear', '☁️ Cloudy', '🌧 Rain', '❄️ Snow'];
-    const weather = weathers[Math.floor(Math.random() * weathers.length)];
-    const temp = Math.floor(Math.random() * 30) + 5;
-    
-    const newsList = ["Tech stocks rise", "AI breakthrough", "Sports finals", "Global summit", "Local festival"];
-    const news = newsList[Math.floor(Math.random() * newsList.length)];
-
-    return {
-      ...c,
-      time: timeStr,
-      weather: `${weather} ${temp}°C`,
-      news
-    };
-  });
-  postMessage({ type: 'CITIES_UPDATED', data: cities });
 };
 
 const fetchFlights = async () => {
@@ -167,126 +147,95 @@ const fetchFlights = async () => {
   }
 };
 
-const fetchSatellitesTLE = async () => {
+async function fetchCelesTrak() {
   try {
-    if (!satelliteModule) satelliteModule = await import('satellite.js');
-    const res = await fetch('/api/satellites');
-    if (!res.ok) throw new Error(`Celestrak fetch failed: ${res.status}`);
+    const res = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
     const text = await res.text();
     const lines = text.split('\n');
-    activeSatellites = [];
-    
-    for (let i = 0; i < Math.min(lines.length - 2, 150); i += 3) {
-      const name = lines[i].trim();
-      const tle1 = lines[i+1].trim();
-      const tle2 = lines[i+2].trim();
-      if (!tle1 || !tle2) continue;
-      
-      const satrec = satelliteModule.twoline2satrec(tle1, tle2);
-      activeSatellites.push({ id: `sat_${i}`, name, satrec });
-    }
-    
-    computeOrbits();
-    updateSatellitePositions();
-  } catch (err) {
-    activeSatellites = Array.from({length: 30}).map((_, i) => ({
-      id: `sat_mock_${i}`,
-      name: `MOCKSAT-${i}`,
-      mockLat: (Math.random() - 0.5) * 160,
-      mockLon: (Math.random() - 0.5) * 360,
-      mockAlt: 400 + Math.random() * 100,
-      speed: (Math.random() - 0.5) * 5
-    }));
-    
-    const mockOrbits = activeSatellites.map(sat => {
-      const points = [];
-      for(let a=0; a<360; a+=10) {
-        points.push({
-          lat: sat.mockLat + Math.sin(a * Math.PI / 180) * 30,
-          lon: sat.mockLon + Math.cos(a * Math.PI / 180) * 30,
-          alt: sat.mockAlt / 63.71
-        });
+    allSatellites = [];
+    for (let i = 0; i < lines.length; i += 3) {
+      if (lines[i] && lines[i+1] && lines[i+2]) {
+         const name = lines[i].trim();
+         const tle1 = lines[i+1].trim();
+         const tle2 = lines[i+2].trim();
+         if (!tle1.startsWith('1 ') || !tle2.startsWith('2 ')) continue;
+         const satrec = satellite.twoline2satrec(tle1, tle2);
+         if (satrec) {
+            (satrec as any).name = name;
+            let type = 'payload';
+            if (name.includes('DEB')) type = 'debris';
+            else if (name.includes('R/B')) type = 'rocket';
+            else if (name.includes('STARLINK')) type = 'starlink';
+            (satrec as any).type = type;
+            allSatellites.push(satrec);
+         }
       }
-      return { id: sat.id, points };
-    });
-    postMessage({ type: 'ORBITS_UPDATED', data: mockOrbits });
-    updateSatellitePositions();
-  }
-};
-
-const computeOrbits = () => {
-  if (!satelliteModule || activeSatellites.length === 0 || activeSatellites[0].id.includes('mock')) return;
-  const orbits = [];
-  const now = new Date();
-  
-  for (const sat of activeSatellites) {
-    const points = [];
-    for (let offset = 0; offset <= 5400; offset += 60) {
-      const time = new Date(now.getTime() + offset * 1000);
-      const gmst = satelliteModule.gstime(time);
-      try {
-        const positionAndVelocity = satelliteModule.propagate(sat.satrec, time);
-        const positionEci = positionAndVelocity.position;
-        if (!positionEci) continue;
-        const positionGd = satelliteModule.eciToGeodetic(positionEci, gmst);
-        points.push({
-          lat: satelliteModule.degreesLat(positionGd.latitude),
-          lon: satelliteModule.degreesLong(positionGd.longitude),
-          alt: positionGd.height / 63.71
-        });
-      } catch(e) {}
     }
-    if (points.length > 0) {
-      orbits.push({ id: sat.id, points });
-    }
+    allSatellites = allSatellites.slice(0, 4000);
+  } catch(e) {
+    console.warn("[Worker] Failed to fetch CelesTrak", e);
   }
-  postMessage({ type: 'ORBITS_UPDATED', data: orbits });
-};
+}
 
-const updateSatellitePositions = () => {
-  if (!isRunning || activeSatellites.length === 0) return;
-  
-  if (activeSatellites[0].id.includes('mock')) {
-    const sats = activeSatellites.map(sat => {
-      sat.mockLon = (sat.mockLon + sat.speed) % 180;
-      return {
-        id: sat.id,
-        name: sat.name,
-        lon: sat.mockLon,
-        lat: sat.mockLat,
-        alt: sat.mockAlt
-      };
+let mockSatellites: any[] = [];
+
+async function fetchSatellites() {
+  if (allSatellites.length === 0) {
+    if (mockSatellites.length === 0) {
+       for(let i=0; i<3000; i++) {
+          mockSatellites.push({
+            id: `sat_mock_${i}`,
+            name: `MOCK-${i}`,
+            type: i % 10 === 0 ? 'starlink' : i % 3 === 0 ? 'debris' : 'payload',
+            lat: (Math.random() - 0.5) * 180,
+            lon: (Math.random() - 0.5) * 360,
+            alt: 400 + Math.random() * 800,
+            speedLat: (Math.random() - 0.5) * 1.5,
+            speedLon: (Math.random() - 0.5) * 1.5
+          });
+       }
+    }
+    const results = mockSatellites.map(sat => {
+       sat.lat += sat.speedLat;
+       sat.lon += sat.speedLon;
+       if (sat.lat > 90 || sat.lat < -90) sat.speedLat *= -1;
+       if (sat.lon > 180) sat.lon -= 360;
+       if (sat.lon < -180) sat.lon += 360;
+       return {
+         id: sat.id,
+         name: sat.name,
+         type: sat.type,
+         lat: sat.lat,
+         lon: sat.lon,
+         alt: sat.alt
+       };
     });
-    postMessage({ type: 'SATELLITES_UPDATED', data: sats });
+    postMessage({ type: 'SATELLITE_SWARM_UPDATED', data: results });
     return;
   }
 
   const now = new Date();
-  const gmst = satelliteModule.gstime(now);
-  
-  const sats = activeSatellites.map(sat => {
-    try {
-      const positionAndVelocity = satelliteModule.propagate(sat.satrec, now);
-      const positionEci = positionAndVelocity.position;
-      if (!positionEci) return null;
-      
-      const positionGd = satelliteModule.eciToGeodetic(positionEci, gmst);
-      return {
-        id: sat.id,
-        name: sat.name,
-        lon: satelliteModule.degreesLong(positionGd.longitude),
-        lat: satelliteModule.degreesLat(positionGd.latitude),
+  const gmst = satellite.gstime(now);
+  const results = [];
+  for (const sat of allSatellites) {
+    const positionAndVelocity = satellite.propagate(sat, now);
+    const positionEci = positionAndVelocity.position as any;
+    if (positionEci && typeof positionEci.x === 'number') {
+      const positionGd = satellite.eciToGeodetic(positionEci, gmst);
+      results.push({
+        id: `sat_${(sat as any).name}`,
+        name: (sat as any).name,
+        type: (sat as any).type,
+        lat: satellite.degreesLat(positionGd.latitude),
+        lon: satellite.degreesLong(positionGd.longitude),
         alt: positionGd.height
-      };
-    } catch (e) {
-      return null;
+      });
     }
-  }).filter(Boolean);
-  
-  postMessage({ type: 'SATELLITES_UPDATED', data: sats });
-};
+  }
+  postMessage({ type: 'SATELLITE_SWARM_UPDATED', data: results });
+}
 
-const handleMessage = (type: string, payload?: any) => {
+const handleMessage = (type: string) => {
   switch (type) {
     case 'START':
       if (!isRunning) {
@@ -295,8 +244,10 @@ const handleMessage = (type: string, payload?: any) => {
         flightInterval = setInterval(fetchFlights, 10000) as any;
         processCities();
         cityInterval = setInterval(processCities, 60000) as any;
-        fetchSatellitesTLE();
-        satelliteInterval = setInterval(updateSatellitePositions, 1000) as any;
+        fetchCelesTrak().then(() => {
+          fetchSatellites();
+          satelliteInterval = setInterval(fetchSatellites, 1000) as any;
+        });
       }
       break;
     case 'TOGGLE':
@@ -311,17 +262,15 @@ const handleMessage = (type: string, payload?: any) => {
         flightInterval = setInterval(fetchFlights, 10000) as any;
         processCities();
         cityInterval = setInterval(processCities, 60000) as any;
-        fetchSatellitesTLE();
-        satelliteInterval = setInterval(updateSatellitePositions, 1000) as any;
+        fetchCelesTrak().then(() => {
+          fetchSatellites();
+          satelliteInterval = setInterval(fetchSatellites, 1000) as any;
+        });
       }
-      break;
-    case 'SET_PRETEXT_MODE':
-      isPretextMode = payload;
-      processCities();
       break;
   }
 };
 
 self.onmessage = (e: MessageEvent<WorkerMessage>) => {
-  handleMessage(e.data.type, (e.data as any).payload);
+  handleMessage(e.data.type);
 };

@@ -5,6 +5,8 @@ import type { PreparedTextWithSegments } from '@chenglou/pretext';
 
 export interface TextData {
   id: string;
+  lat?: number;
+  lon?: number;
   position: THREE.Vector3; // 3D position on the globe
   text: string;
   color: string;
@@ -42,7 +44,6 @@ export class TextLayer {
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = width * dpr;
     this.canvas.height = height * dpr;
-    
     this.ctx.scale(dpr, dpr);
   }
 
@@ -74,13 +75,23 @@ export class TextLayer {
       if (zoomLevel === 2 && !data.id.startsWith('flight_') && !data.id.startsWith('city_')) continue;
       if (zoomLevel === 3 && data.id.startsWith('sat_')) continue;
 
+      let worldPos = data.position;
+      const t = (window as any).uMorph || 0;
+      if (t > 0 && data.lat !== undefined && data.lon !== undefined) {
+         const flatX = (data.lon / 180) * 100 * Math.PI;
+         const flatY = (data.lat / 90) * 100 * (Math.PI / 2);
+         // Preserve alt/radius relative to 100
+         const alt = data.position.length() - 100;
+         worldPos = new THREE.Vector3().lerpVectors(data.position, new THREE.Vector3(flatX, flatY, alt), t);
+      }
+
       // 1. Check if point is facing the camera (not on the back side of the globe)
-      if (!isPointVisible(data.position, this.globeCenter, this.camera.position)) {
+      if (!isPointVisible(worldPos, this.globeCenter, this.camera.position)) {
         continue;
       }
 
       // 2. Project 3D coordinate to 2D screen coordinate
-      const screenPos = projectToScreen(data.position, this.camera, width, height);
+      const screenPos = projectToScreen(worldPos, this.camera, width, height);
 
       // If outside screen, clip
       if (screenPos.x < 0 || screenPos.x > width || screenPos.y < 0 || screenPos.y > height) {
@@ -88,7 +99,7 @@ export class TextLayer {
       }
 
       // 3. Prepare Text using Pretext
-      const font = `${data.fontSize}px Inter, sans-serif`;
+      const font = `900 ${data.fontSize}px Inter, sans-serif`;
       const cacheKey = `${data.id}_${font}`;
       
       let cached = this.textCache.get(cacheKey);
@@ -138,11 +149,15 @@ export class TextLayer {
       drawnBoxes.push(box);
 
       // 6. Draw Text to Canvas 2D
+      // Draw stroke first to make it pop and super thick
       this.ctx.fillStyle = data.color;
+      this.ctx.strokeStyle = '#000000';
+      this.ctx.lineWidth = 3;
       this.ctx.textBaseline = 'top';
 
       let currentY = screenPos.y;
       for (const line of result.lines) {
+        this.ctx.strokeText(line.text, screenPos.x + 8, currentY); 
         this.ctx.fillText(line.text, screenPos.x + 8, currentY); 
         currentY += lineHeight;
       }

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@chenglou/pretext": "^0.0.7",
+    "gsap": "^3.15.0",
     "satellite.js": "^7.0.1",
     "three": "^0.184.0"
   }

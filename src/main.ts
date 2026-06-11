@@ -1,7 +1,9 @@
+import './style.css';
 import { GlobeApp } from './components/Globe';
 import { TextLayer } from './components/TextLayer';
 import type { TextData } from './components/TextLayer';
 import { latLonToVector3 } from './utils/coordinates';
+import * as THREE from 'three';
 
 document.addEventListener('DOMContentLoaded', () => {
   try {
@@ -49,17 +51,26 @@ document.addEventListener('DOMContentLoaded', () => {
         globeApp.addFlightPaths(data);
       }
       
-      if (type === 'SATELLITES_UPDATED') {
-        const satTextData: TextData[] = data.map((s: any) => ({
-          id: s.id,
+      if (type === 'SATELLITE_SWARM_UPDATED') {
+        globeApp.updateSatelliteSwarm(data);
+        
+        const topSats = data.filter((s: any) => s.type === 'payload').slice(0, 20);
+        const satTextData: TextData[] = topSats.map((s: any) => ({
+          id: `sat_${s.name}`,
+          lat: s.lat,
+          lon: s.lon,
           position: latLonToVector3(s.lat, s.lon, 100 + (s.alt / 63.71)),
           text: `🛰 ${s.name}`,
-          color: '#00ff00',
-          fontSize: 12
+          color: '#00ccff',
+          fontSize: 9
         }));
         
         activeTextData = [...activeTextData.filter(d => !d.id.startsWith('sat_')), ...satTextData];
-        globeApp.updateSatellitesBeams(data);
+        if ((window as any).showSatBeams !== false) {
+          globeApp.updateSatellitesBeams(topSats);
+        } else {
+          globeApp.updateSatellitesBeams([]);
+        }
       }
 
       if (type === 'ORBITS_UPDATED') {
@@ -67,21 +78,27 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (type === 'CITIES_UPDATED') {
-        globeApp.drawNetworkArcs(data);
+        (window as any).currentCityData = data;
+        if ((window as any).showNetworks !== false) {
+          globeApp.drawNetworkArcs(data);
+        } else {
+          globeApp.drawNetworkArcs([]);
+        }
+        if ((window as any).showSpikes) {
+          globeApp.updatePopulationSpikes(data, true);
+        } else {
+          globeApp.updatePopulationSpikes([], false);
+        }
+        
         const cityTextData: TextData[] = data.map((c: any) => {
-          // Typography map effect: scale font size based on population
-          // Using a logarithmic scale allows both small cities to form the background
-          // and massive cities (like Beijing, Seoul) to pop out immensely.
           const logPop = Math.log10(c.pop || 50000);
-          // Scale from ~4.5 (30k) to ~7.5 (30M) into 8px to 48px
-          const size = Math.max(8, Math.min(48, (logPop - 4.5) * 14));
+          const size = Math.max(8, Math.pow(Math.max(0, logPop - 4.5), 1.5) * 6);
+          const color = size > 16 ? '#00ffff' : size > 12 ? '#aaffaa' : '#aaaaaa';
           
-          let color = '#444455'; // Background small cities
-          if (c.pop > 5000000) color = '#ffffff'; // Mega cities pop out
-          else if (c.pop > 1000000) color = '#aaaaaa'; // Large cities
-
           return {
-            id: c.id,
+            id: `city_${c.name}`,
+            lat: c.lat,
+            lon: c.lon,
             position: latLonToVector3(c.lat, c.lon, 100.1),
             text: c.name, 
             color: color,
@@ -98,33 +115,145 @@ document.addEventListener('DOMContentLoaded', () => {
 
     worker.postMessage({ type: 'START' });
 
-    // UI Toggle
-    const toggleBtn = document.getElementById('toggle-update');
-    let isPaused = false;
-    if (toggleBtn) {
-      toggleBtn.addEventListener('click', () => {
-        isPaused = !isPaused;
-        toggleBtn.innerText = isPaused ? 'Resume Updates' : 'Pause Updates';
+    // Dashboard UI Toggles
+    const layerPretext = document.getElementById('layer-pretext') as HTMLInputElement;
+    const layer3dSpikes = document.getElementById('layer-3d-spikes') as HTMLInputElement;
+    const layerNetworks = document.getElementById('layer-networks') as HTMLInputElement;
+    const layerPause = document.getElementById('layer-pause') as HTMLInputElement;
+
+    let isPretextMode = false;
+    (window as any).showNetworks = true;
+    (window as any).showSatBeams = true;
+    (window as any).showSpikes = false;
+
+    if (layerPretext) {
+      layerPretext.addEventListener('change', (e) => {
+        isPretextMode = (e.target as HTMLInputElement).checked;
+        globeApp.setPretextMode(isPretextMode);
+        worker.postMessage({ type: 'SET_PRETEXT_MODE', payload: isPretextMode });
+      });
+    }
+
+    if (layer3dSpikes) {
+      layer3dSpikes.addEventListener('change', (e) => {
+        (window as any).showSpikes = (e.target as HTMLInputElement).checked;
+        const cities = (window as any).currentCityData || [];
+        globeApp.updatePopulationSpikes(cities, (window as any).showSpikes);
+        globeApp.tiltForSpikes((window as any).showSpikes);
+      });
+    }
+
+    if (layerNetworks) {
+      layerNetworks.addEventListener('change', (e) => {
+        const checked = (e.target as HTMLInputElement).checked;
+        (window as any).showNetworks = checked;
+        (window as any).showSatBeams = checked;
+        
+        if (checked) {
+          const cities = (window as any).currentCityData || [];
+          globeApp.drawNetworkArcs(cities);
+        } else {
+          globeApp.drawNetworkArcs([]);
+          globeApp.updateSatellitesBeams([]);
+        }
+      });
+    }
+
+    if (layerPause) {
+      layerPause.addEventListener('change', () => {
         worker.postMessage({ type: 'TOGGLE' });
       });
     }
 
-    const togglePretextBtn = document.getElementById('toggle-pretext-mode');
-    let isPretextMode = false;
-    if (togglePretextBtn) {
-      togglePretextBtn.addEventListener('click', () => {
-        isPretextMode = !isPretextMode;
-        globeApp.setPretextMode(isPretextMode);
-        worker.postMessage({ type: 'SET_PRETEXT_MODE', payload: isPretextMode });
-        if (isPretextMode) {
-          togglePretextBtn.style.background = 'rgba(0,80,0,0.9)';
-          togglePretextBtn.innerText = 'STANDARD MODE';
-        } else {
-          togglePretextBtn.style.background = 'rgba(0,20,0,0.8)';
-          togglePretextBtn.innerText = 'MATRIX PRETEXT MODE';
+    const flyToSelect = document.getElementById('fly-to-select') as HTMLSelectElement;
+    if (flyToSelect) {
+      flyToSelect.addEventListener('change', (e) => {
+        const val = (e.target as HTMLSelectElement).value;
+        if (val) {
+          const [lat, lon] = val.split(',').map(Number);
+          globeApp.flyTo(lat, lon);
+          // Reset selection so user can re-click
+          setTimeout(() => flyToSelect.value = '', 500);
         }
       });
     }
+
+    const layerSnapping = document.getElementById('layer-snapping') as HTMLInputElement;
+    const layerUnroll = document.getElementById('layer-unroll') as HTMLInputElement;
+    const layerSatellites = document.getElementById('layer-satellites') as HTMLInputElement;
+    const crosshair = document.getElementById('crosshair');
+
+    let isSnappingEnabled = false;
+
+    if (layerSnapping) {
+      layerSnapping.addEventListener('change', (e) => {
+        isSnappingEnabled = (e.target as HTMLInputElement).checked;
+        if (crosshair) crosshair.style.display = isSnappingEnabled ? 'block' : 'none';
+      });
+    }
+
+    if (layerUnroll) {
+      layerUnroll.addEventListener('change', (e) => {
+        const isUnrolled = (e.target as HTMLInputElement).checked;
+        if (globeApp.unrollMap) {
+          globeApp.unrollMap(isUnrolled);
+        }
+      });
+    }
+
+    if (layerSatellites) {
+      layerSatellites.addEventListener('change', (e) => {
+        const isSatsOn = (e.target as HTMLInputElement).checked;
+        if (globeApp.toggleSatellites) {
+          globeApp.toggleSatellites(isSatsOn);
+        }
+      });
+    }
+
+    // Magnetic Snapping Logic
+    let snapTimeout: any;
+    globeApp.controls.addEventListener('change', () => {
+      if (!isSnappingEnabled) return;
+      
+      clearTimeout(snapTimeout);
+      snapTimeout = setTimeout(() => {
+        const centerRay = new THREE.Raycaster();
+        centerRay.setFromCamera(new THREE.Vector2(0, 0), globeApp.camera);
+        const intersects = centerRay.intersectObject(globeApp.earthMesh);
+        if (intersects.length > 0) {
+           const point = intersects[0].point;
+           // Convert 3D point to lat/lon (assuming radius 100)
+           const lat = 90 - (Math.acos(point.y / 100)) * (180 / Math.PI);
+           let lon = ((270 + (Math.atan2(point.x, point.z) * (180 / Math.PI))) % 360) - 180;
+           
+           const cities = (window as any).currentCityData || [];
+           let nearestCity = null;
+           let minDist = 5; // Snap threshold (~500km)
+           
+           for (const c of cities) {
+             // Simple euclidean distance on lat/lon for fast snapping
+             const dist = Math.sqrt(Math.pow(c.lat - lat, 2) + Math.pow(c.lon - lon, 2));
+             if (dist < minDist) {
+               minDist = dist;
+               nearestCity = c;
+             }
+           }
+
+           if (nearestCity) {
+             globeApp.flyTo(nearestCity.lat, nearestCity.lon);
+             // Make crosshair pulse
+             if (crosshair) {
+               crosshair.style.borderColor = '#00ff00';
+               crosshair.style.boxShadow = '0 0 20px #00ff00';
+               setTimeout(() => {
+                 crosshair.style.borderColor = 'rgba(255,255,255,0.5)';
+                 crosshair.style.boxShadow = '0 0 10px rgba(0,255,255,0.5)';
+               }, 1000);
+             }
+           }
+        }
+      }, 300); // 300ms after user stops dragging
+    });
 
     // UI Interaction
     const infoPanel = document.getElementById('info-panel');
