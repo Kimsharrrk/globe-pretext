@@ -245,10 +245,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div style="color: #aaa;">현재 날씨 (Weather)</div>
                 <div style="text-align: right; font-weight: 500; color: #00ffff;">${rawCity.weather || 'N/A'}</div>
               </div>
-              <div style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; border-left: 3px solid #ffaa00;">
-                <strong style="color: #ffaa00; display: block; margin-bottom: 5px;">📰 실시간 뉴스 (Latest News)</strong>
-                <span style="color: #ddd; line-height: 1.4;">${rawCity.news || 'No active headlines'}</span>
-              </div>
             `;
             globeApp.drawSelectedSatelliteOrbit([]);
           }
@@ -305,10 +301,6 @@ document.addEventListener('DOMContentLoaded', () => {
               <div style="text-align: right; font-weight: 500;">${c.time || 'N/A'}</div>
               <div style="color: #aaa;">현재 날씨 (Weather)</div>
               <div style="text-align: right; font-weight: 500; color: #00ffff;">${c.weather || 'N/A'}</div>
-            </div>
-            <div style="margin-top: 15px; padding: 12px; background: rgba(255,255,255,0.06); border-radius: 8px; font-size: 12px; border-left: 3px solid #ffaa00;">
-              <strong style="color: #ffaa00; display: block; margin-bottom: 5px;">📰 실시간 뉴스 (Latest News)</strong>
-              <span style="color: #ddd; line-height: 1.4;">${c.news || 'No active headlines'}</span>
             </div>
           `;
           globeApp.drawSelectedSatelliteOrbit([]); // Clear orbit if a city is clicked

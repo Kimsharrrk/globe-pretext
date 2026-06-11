@@ -553,6 +553,9 @@ export class GlobeApp {
         TWO: THREE.TOUCH.DOLLY_PAN
       };
     } else {
+      gsap.to(this.camera.position, { x: 145, y: 143, z: 145, duration: 2.0, ease: "power2.inOut" });
+      gsap.to(this.controls.target, { x: 0, y: 0, z: 0, duration: 2.0, ease: "power2.inOut" });
+
       this.controls.enableRotate = true;
       this.controls.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
@@ -582,6 +585,7 @@ export class GlobeApp {
     // Morph geometries with spherePos/flatPos
     this.globeGroup.traverse((child: any) => {
       if (child.geometry && child.geometry.attributes.spherePos && child.geometry.attributes.flatPos) {
+        child.frustumCulled = false; // Prevent disappearing when zoomed in 2D mode
         const pos = child.geometry.attributes.position;
         const sPos = child.geometry.attributes.spherePos.array;
         const fPos = child.geometry.attributes.flatPos.array;
