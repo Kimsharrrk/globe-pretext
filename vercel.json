@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/flights",
+      "destination": "https://opensky-network.org/api/states/all"
+    },
+    {
+      "source": "/api/satellites",
+      "destination": "https://api.n2yo.com/rest/v1/satellite/positions"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    }
+  ]
+}
