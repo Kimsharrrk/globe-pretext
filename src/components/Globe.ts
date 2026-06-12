@@ -107,10 +107,10 @@ export class GlobeApp {
     this.setupMorphGeometry(geometry);
     
     const material = new THREE.MeshPhongMaterial({
-      map: textureLoader.load('/textures/earth-blue-marble.jpg'),
-      bumpMap: textureLoader.load('/textures/earth-topology.png'),
+      map: textureLoader.load(`${import.meta.env.BASE_URL}textures/earth-blue-marble.jpg`),
+      bumpMap: textureLoader.load(`${import.meta.env.BASE_URL}textures/earth-topology.png`),
       bumpScale: 5,
-      specularMap: textureLoader.load('/textures/earth-water.png'),
+      specularMap: textureLoader.load(`${import.meta.env.BASE_URL}textures/earth-water.png`),
       specular: new THREE.Color('grey'),
       shininess: 50
     });
@@ -177,23 +177,8 @@ export class GlobeApp {
     );
   }
 
-  private originalEarthMaterial: THREE.Material | null = null;
-
   public setPretextMode(enabled: boolean) {
-    if (this.earthMesh) {
-      if (!this.originalEarthMaterial) {
-        this.originalEarthMaterial = this.earthMesh.material as THREE.Material;
-      }
-      
-      if (enabled) {
-        // Use a black material that writes to the depth buffer to hide the back side
-        this.earthMesh.material = new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: true });
-      } else {
-        // Restore original material
-        this.earthMesh.material = this.originalEarthMaterial;
-      }
-    }
-
+    if (this.earthMesh) this.earthMesh.visible = !enabled;
     if (this.atmMesh) this.atmMesh.visible = !enabled;
     
     if (enabled) {
@@ -667,7 +652,7 @@ export class GlobeApp {
 
   private async loadBorders() {
     try {
-      const res = await fetch('/countries.geo.json');
+      const res = await fetch(`${import.meta.env.BASE_URL}countries.geo.json`);
       const data = await res.json();
       const material = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.3 });
       

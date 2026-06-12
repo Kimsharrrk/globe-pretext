@@ -60,7 +60,7 @@ let globalCities: any[] = [];
 async function fetchGlobalCities() {
   if (globalCities.length > 0) return globalCities;
   try {
-    const res = await fetch('/global-cities.json');
+    const res = await fetch(`${import.meta.env.BASE_URL}global-cities.json`);
     const data = await res.json();
     globalCities = data;
     return globalCities;
@@ -85,7 +85,7 @@ const processCities = async () => {
 
 async function fetchCelesTrak() {
   try {
-    const res = await fetch('/active.txt');
+    const res = await fetch(`${import.meta.env.BASE_URL}active.txt`);
     const text = await res.text();
     const lines = text.split('\n');
     allSatellites = [];
