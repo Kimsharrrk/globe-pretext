@@ -177,8 +177,23 @@ export class GlobeApp {
     );
   }
 
+  private originalEarthMaterial: THREE.Material | null = null;
+
   public setPretextMode(enabled: boolean) {
-    if (this.earthMesh) this.earthMesh.visible = !enabled;
+    if (this.earthMesh) {
+      if (!this.originalEarthMaterial) {
+        this.originalEarthMaterial = this.earthMesh.material as THREE.Material;
+      }
+      
+      if (enabled) {
+        // Use a black material that writes to the depth buffer to hide the back side
+        this.earthMesh.material = new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: true });
+      } else {
+        // Restore original material
+        this.earthMesh.material = this.originalEarthMaterial;
+      }
+    }
+
     if (this.atmMesh) this.atmMesh.visible = !enabled;
     
     if (enabled) {
